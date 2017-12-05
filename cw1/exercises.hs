@@ -1,4 +1,3 @@
-import Numeric
 import Data.Char
 import Data.List
 
@@ -71,17 +70,20 @@ constant (x:[]) = True
 constant (x:y:xs) = x == y && constant (y:xs)
 
 --exercise 5
-rpcalc :: String -> [Int] -> Int
-rpcalc [] [] = 0
-rpcalc [] (y:[]) = y
-rpcalc (x:xs) (y:[]) = rpcalc xs [digitToInt x, y] 
-rpcalc (x:xs) [] = rpcalc xs [digitToInt x]
-rpcalc (x:xs) (y:z:ys)
-    | x == '+' = rpcalc xs ((z + y):ys) 
-    | x == '-' = rpcalc xs ((z - y):ys) 
-    | x == '/' = rpcalc xs ((z `div` y):ys) 
-    | x == '*' = rpcalc xs ((z * y):ys) 
-    | otherwise = rpcalc xs ((digitToInt x):y:z:ys)
+rpcalc :: String -> Int
+rpcalc x = rpcalcMain x []
+
+rpcalcMain :: String -> [Int] -> Int
+rpcalcMain [] [] = 0
+rpcalcMain [] (y:[]) = y
+rpcalcMain (x:xs) (y:[]) = rpcalcMain xs [digitToInt x, y] 
+rpcalcMain (x:xs) [] = rpcalcMain xs [digitToInt x]
+rpcalcMain (x:xs) (y:z:ys)
+    | x == '+' = rpcalcMain xs ((z + y):ys) 
+    | x == '-' = rpcalcMain xs ((z - y):ys) 
+    | x == '/' = rpcalcMain xs ((z `div` y):ys) 
+    | x == '*' = rpcalcMain xs ((z * y):ys) 
+    | otherwise = rpcalcMain xs ((digitToInt x):y:z:ys)
 
 --exercise 6
 neighbours :: (Floating a, Ord a) => Int -> (a,a) -> [(a,a)] -> [(a,a)]
@@ -113,45 +115,28 @@ distance x y = sqrt ((fst x - fst y) ^ 2 + (snd x - snd y) ^ 2)
 --exercise 7
 data SearchTree = Node SearchTree Int SearchTree | Leaf Int deriving Show
 
+balancedSize :: SearchTree -> Bool
+balancedSize (Leaf i) = True
+balancedSize (Node left i right) = balancedSize left && balancedSize right && (abs(nodes left - nodes right) < 2)
+
 balanced :: SearchTree -> Bool
-balanced (Leaf i) = True
-balanced (Node left i right) = balanced left && balanced right && (abs(nodes left - nodes right) < 2) 
+balanced x = balancedValues x && balancedSize x 
+
+balancedValues :: SearchTree -> Bool
+balancedValues (Leaf i) = True
+balancedValues (Node left i right) = highest left <= i && i <= lowest right && balancedValues left && balancedValues right
+
+highest :: SearchTree -> Int
+highest (Leaf i) = i
+highest (Node left i right) = last (sort [highest left, i, highest right])
+
+lowest :: SearchTree -> Int
+lowest (Leaf i) = i
+lowest (Node left i right) = head (sort [lowest left, i, lowest right])
 
 nodes :: SearchTree -> Int
 nodes (Leaf i) = 1
 nodes (Node left i right) = nodes left + nodes right
-
-unbalancedTree :: SearchTree
-unbalancedTree =
-    Node
-        (Leaf 4)
-        5
-        (Node
-            (Node
-                (Leaf 2)
-                5
-                (Leaf 8)
-            )
-            5
-            (Leaf 8)
-        )
-
-balancedTree :: SearchTree
-balancedTree =
-    Node
-        (Node
-            (Leaf 3)
-            4
-            (Leaf 9)
-        )
-
-        5
-
-        (Node
-            (Leaf 2)
-            5
-            (Leaf 8)
-        )
 
 --exercise 8
 newtonRootSequence :: Double -> [Double]
@@ -164,21 +149,27 @@ getRoot d x
         where y = getRoot d (x - 1)
 
 newtonRoot :: Double -> Double -> Double 
-newtonRoot d epsilon = head [getRoot d x | x <- [1..], abs((getRoot d x) - getRoot d (x - 1)) - abs(epsilon) < 0]
+newtonRoot d epsilon = head [getRoot d x | x <- [1..], abs((getRoot d x) - getRoot d (x - 1)) <= abs(epsilon)]
     
 --exercise 9
 hyperOperator :: Int -> Int -> Int -> Int
 hyperOperator x y z
     | x == 0 = z + 1
-    | x == 1 && z == 0 = y
-    | x == 2 && z == 0 = 0
-    | x >= 3 && z == 0 = 1
-    | otherwise = hyperOperator (x - 1) y (hyperOperator x y (z - 1))
+    | x == 1 = y + z
+    | x == 2 = y * z
+    | x == 3 = y ^ z
+    | otherwise = knuth (x - 2) y z
+
+knuth :: Int -> Int -> Int -> Int
+knuth x y z
+    | y == 0 = 1
+    | x == 1 = y ^ z
+    | otherwise = knuth (x - 1) y (knuth (x - 1) y (z - 1))
 
 --exercise 10
 encode :: String -> [Int]
 encode [] = []
-encode (x:xs) = digits ++ encode xs 
+encode (x:xs) = digits ++ encode xs
     where   digits = addParity 0 (charToBinary 128 (fromEnum x))
 
 charToBinary :: Int -> Int -> [Int]
@@ -209,17 +200,42 @@ binaryToChar n (x:xs) = binaryToChar (n+i) xs
     where i = x * (2 ^ (length xs))
 
 --exercise 12
+makeChange :: Int -> [Int] -> [Int]
+makeChange m denoms = solution
+    where
+        denomLength = length denoms
+        empty = genEmpty denomLength
+        solution = iterateChange m denoms empty
+
+genEmpty :: Int -> [Int]
+genEmpty n
+    | n == 0 = []
+    | otherwise = 0 : genEmpty (n - 1)
+
+iterateChange :: Int -> [Int] -> [Int] -> [Int]
+iterateChange target denoms input
+    | changeTotal denoms input == target = input
+    | otherwise = head [iterateChange target denoms x | x <- next, changeTotal denoms input == target]
+        where next = genCombinations 0 input
+
+genCombinations :: Int -> [Int] -> [[Int]]
+genCombinations n xs
+    | n < length xs = [ if x == n then (xs !! n) + 1 else xs !! n | x <- [0..len]] : genCombinations (n + 1) xs
+    | otherwise = []
+        where len = length xs - 1
+
+changeTotal :: [Int] -> [Int] -> Int
+changeTotal _ [] = 0
+changeTotal [] _ = 0
+changeTotal (x:xs) (y:ys) = x * y + changeTotal xs ys
+
 --exercise 13
 goodsteinSequence :: (Int, [Int]) -> [(Int, [Int])]
-goodsteinSequence xs = [getSuccessor n xs | n <- [0..], snd (getSuccessor n xs) /= [0] && fst (getSuccessor n xs) /= 0]
-
-getSuccessor :: Int -> (Int, [Int]) -> (Int, [Int])
-getSuccessor n x 
-    | n == 0 = x
-    | otherwise = getSuccessor (n - 1) (successor x)
+goodsteinSequence (a,b)
+    | b == [] = [(a,b)]
+    | otherwise = (a,b) : goodsteinSequence (successor (a,b))
 
 successor :: (Int, [Int]) -> (Int, [Int])
-successor (n, [0]) = (0 , [0])
 successor (n, x:xs)
     | x > 0 = (n + 1, trimEnd ((x - 1):xs))
     | otherwise = (n + 1, final)
@@ -229,6 +245,7 @@ successor (n, x:xs)
                 final = trimEnd res
 
 trimStart :: [Int] -> [Int]
+trimStart [] = []
 trimStart (x:xs)
     | x == 0 = trimStart xs
     | otherwise = (x:xs) 
@@ -248,32 +265,60 @@ position search (x:xs)
     | otherwise = 1 + position search xs
 
 --exercise 14
---type Subst = Assoc Char Bool
---type Assoc k v = [(k,v)]
---
---data Prop = Const Bool | Var Char | Not Prop | And Prop Prop | Imply Prop Prop
---isSat :: Prop -> [Subst]
---isSat input = findSolutions input (vars input) []
---
---findSolutions :: Prop -> [Subst] -> [Subst] -> [Subst]
---findSolutions input [] ys = ys
---findSolutions input (x:xs) ys
---    | eval x input = findSolutions input xs (x:ys)
---    | otherwise = findSolutions input xs ys
---
---vars :: Prop -> [Char]
---vars (Const _) = []
---vars (Var x) = [x]
---vars (Not p) = vars p
---vars (And p q) = vars p ++ vars q
---vars (Imply p q) = vars p ++ vars q
---
---eval :: Subst -> Prop -> Bool
---eval s (Const b) = b
---eval s (Var c) = find c s
---eval s (Not p) = not $ eval s p
---eval s (And p q) = eval s p && eval s q
---eval s (Imply p q) = eval s p <= eval s q
+type Assoc k v = [(k,v)]
+
+findo :: Eq k => k -> Assoc k v -> v
+findo k t = head [v | (k',v) <- t, k == k']
+
+rmdups :: Eq a => [a] -> [a]
+rmdups [] = []
+rmdups (x:xs) = x : filter (/= x) (rmdups xs)
+
+data Prop = Const Bool | Var Char | Not Prop | And Prop Prop | Imply Prop Prop
+
+p1 :: Prop
+p1 = And (Var 'A') (Not (Var 'A'))
+
+p2 :: Prop
+p2 = Imply (And (Var 'A') (Var 'B')) (Var 'A')
+
+p3 :: Prop
+p3 = Imply (Var 'A') (And (Var 'A') (Var 'B'))
+
+p4 :: Prop
+p4 = Imply (And (Var 'A') (Imply (Var 'A') (Var 'B'))) (Var 'B')
+
+type Subst = Assoc Char Bool
+
+eval :: Subst -> Prop -> Bool
+eval _ (Const b) = b
+eval s (Var x) = findo x s
+eval s (Not p) = not (eval s p)
+eval s (And p q) = eval s p && eval s q
+eval s (Imply p q) = eval s p <= eval s q
+
+vars :: Prop -> [Char]
+vars (Const _) = []
+vars (Var x) = [x]
+vars (Not p) = vars p
+vars (And p q) = vars p ++ vars q
+vars (Imply p q) = vars p ++ vars q
+
+bools :: Int -> [[Bool]]
+bools 0 = [[]]
+bools n = map (False:) bss ++ map (True:) bss
+            where bss = bools (n-1)
+
+substs :: Prop -> [Subst]
+substs p = map (zip vs) (bools (length vs))
+             where vs = rmdups (vars p)
+
+isTaut :: Prop -> Bool
+isTaut p = and [eval s p | s <- substs p]
+
+isSat :: Prop -> [Subst]
+isSat p = [x | x <- possible, eval x p]
+        where possible = substs p
 
 --exercise 15
 isCantorPair :: Int -> Bool
