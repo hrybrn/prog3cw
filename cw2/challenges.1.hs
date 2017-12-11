@@ -16,16 +16,22 @@ union xs ys = [x | x <- xs, not (elem x ys)] ++ ys
 --b
 rename :: Expr -> Int -> Int -> Expr
 rename (App ex1 ex2) old new = App (rename ex1 old new) (rename ex2 old new)
-rename (Lam i (App (Lam j ex1) (Lam k ex2))) old new | i == old = (Lam new (App (Lam j ex1) (Lam k ex2)))
-rename (Lam i (App (Lam j ex1) ex2)) old new | i == old = (Lam new (App (Lam j ex1) (rename ex2 old new)))
-rename (Lam i (App ex1 (Lam j ex2))) old new | i == old = (Lam new (App (rename ex1 old new) (Lam j ex2)))
 rename (Lam i ex) old new
-    | i == old && isLam ex && bound ex old = Lam new ex
-    | i == old = Lam new (rename ex old new)
-    | otherwise = Lam i (rename ex old new)
+    | i == old && isApplication ex && isLam first && isLam second = Lam new ex
+    | i == old && isApplication ex && isLam first = Lam new (App first (rename second old new))
+    | i == old && isApplication ex && isLam second = Lam new (App (rename first old new) second)
+            | i == old && isLam ex && bound ex old = Lam new ex
+            | i == old = Lam new (rename ex old new)
+            | otherwise = Lam i (rename ex old new)
+        where   sections = fromJust (getSections ex)
+                first = fst sections
+                second = snd sections
 rename (Var i) old new
     | i == old = Var new
     | otherwise = Var i
+
+fromJust :: (Maybe (Expr, Expr)) -> (Expr, Expr)
+fromJust (Just e) = e
 
 used :: Expr -> Int -> Bool
 used (App ex1 ex2) i = or [used ex1 i, used ex2 i]
@@ -40,10 +46,6 @@ bound (Var j) i = False
 getSections :: Expr -> Maybe (Expr, Expr)
 getSections (App ex1 ex2) = Just (ex1, ex2)
 getSections _ = Nothing
-
-isLam :: Expr -> Bool
-isLam (Lam i ex) = True
-isLam _ = False
 
 --c
 --this shows what variables have been defined and used
@@ -89,49 +91,44 @@ possible _ _ = []
 
 --d
 hasRedex :: Expr -> Bool
-hasRedex (App e (Lam j ex)) = True
-hasRedex (App (Lam i ex) (Var j)) = True
-hasRedex (App ex1 ex2) = or [hasRedex ex1, hasRedex ex2]
-hasRedex (Lam i ex) = hasRedex ex
-hasRedex (Var i) = False
+hasRedex ex = length (freeVariables ex) > 0
 
 --e
 substitute :: Expr -> Int -> Expr -> Expr
 substitute (App ex1 ex2) old new = App (substitute ex1 old new) (substitute ex2 old new)
 substitute (Lam i ex) old new
     | i == old = Lam i ex
-    | elem i (usedVariables new) = Lam replacement (substitute (rename ex i replacement) old new)
     | otherwise = Lam i (substitute ex old new)
-        where replacement = firstAvailable ex new
 substitute (Var i) old new
     | i == old = new
     | otherwise = Var i
-
-firstAvailable :: Expr -> Expr -> Int
-firstAvailable e1 e2 = head [x | x <- [1..], not (elem x used1), not (elem x used2)]
-    where used1 = usedVariables e1
-          used2 = usedVariables e2
-
-usedVariables :: Expr -> [Int]
-usedVariables (App ex1 ex2) = usedVariables ex1 `union` usedVariables ex2
-usedVariables (Lam i ex) = [i] `union` usedVariables ex
-usedVariables (Var i) = [i]
 
 --challenge 2
 prettyPrint :: Expr -> String
 prettyPrint (App (Lam i ex1) (App ex2 ex3)) = "(" ++ prettyPrint (Lam i ex1) ++ ")(" ++ prettyPrint (App ex2 ex3) ++ ")"
 prettyPrint (App (Lam i ex1) (Lam j ex2)) = "(" ++ prettyPrint (Lam i ex1) ++ ")(" ++ prettyPrint (Lam j ex2) ++ ")"
 prettyPrint (App (Lam i ex1) ex2) = "(" ++ prettyPrint (Lam i ex1) ++ ")" ++ prettyPrint ex2
-prettyPrint (App ex1 (Lam i ex2)) = prettyPrint ex1 ++ "(" ++ prettyPrint (Lam i ex2) ++ ")"
+prettyPrint (App ex1 (App (Lam i ex2) ex3)) = prettyPrint ex1 ++ "(" ++ prettyPrint (App (Lam i ex2) ex3) ++ ")"
 prettyPrint (App ex1 (App ex2 ex3)) = prettyPrint ex1 ++ "(" ++ prettyPrint (App ex2 ex3) ++ ")"
 prettyPrint (App ex1 ex2) = prettyPrint ex1 ++ prettyPrint ex2
 prettyPrint (Lam i (Lam j ex)) = "\\x" ++ show i ++ drop 1 (prettyPrint (Lam j ex))
 prettyPrint (Lam i ex) = "\\x" ++ show i ++ "->" ++ prettyPrint ex
 prettyPrint (Var i) = "x" ++ show i
 
+anotherLam :: Expr -> Bool
+anotherLam (Lam i ex) = True
+anotherLam _ = False
+
+isApplication :: Expr -> Bool
+isApplication (App ex1 ex2) = True
+isApplication _ = False
+
+isLam :: Expr -> Bool
+isLam (Lam i ex) = True
+isLam _ = False
 
 --challenge 3
---from Graham Hutton's book, 'Programming in Haskell'
+data ExtExpr = ExtApp ExtExpr ExtExpr | ExtLam [Int] ExtExpr | ExtVar Int deriving (Show, Eq)
 newtype Parser a = P (String -> [(a,String)])
 
 parse (P p) inp = p inp
@@ -209,69 +206,95 @@ natural = token nat
 symbol :: String -> Parser String
 symbol xs = token (string xs)
 
---end of code from Graham Hutton
-
-data ExtExpr = ExtApp ExtExpr ExtExpr | ExtLam [Int] ExtExpr | ExtVar Int deriving (Show, Eq)
-
---low lam
---high brackets vars
-
---Expr ::= Var | Expr Expr | “\” Vars “->” Expr | ( Expr )
---Vars ::= Var | Var Vars
---Var ::= “x” Int
-
---Low ::= High Low | \ Vars -> Low | High
---High ::= ( Low ) | Vars
---Vars ::= Var | Vars Var
---Var ::= x Int
-
-makeVars :: [Int] -> ExtExpr
-makeVars (x:[]) = ExtVar x
-makeVars xs = ExtApp (makeVars (init xs)) (ExtVar (last xs))
-
-low :: Parser ExtExpr
-low = do h <- high
-         l <- low
-         return (ExtApp h l)
-         <|> do h <- high
-                return h
-                <|>
-                do symbol "\\"
-                   ns <- some (do symbol "x"
-                                  natural)
-                   symbol "->"
-                   e <- low
-                   return (ExtLam ns e)
-                
-
-vars :: Parser ExtExpr
-vars = do ns <- some (do symbol "x"
-                         natural)
-          return (makeVars ns)
-
-
-high :: Parser ExtExpr
-high = do symbol "("
-          e <- low
-          symbol ")"
-          return e
-          <|> do v <- vars
-                 e <- low
-                 return (ExtApp v e)
-                 <|> do v <- vars
-                        return v
-
 parseLam :: String -> Maybe ExtExpr
-parseLam xs = case (parse low xs) of
-                [(n,[])] -> Just n
-                [(n,left)] -> if (isNothing (parseLam left)) then Nothing else makeApp n (parseLam left)
-                [] -> Nothing
+parseLam xs
+    | containsNothing (parseInterLam xs) = Nothing
+    | otherwise = Just (convert (parseInterLam xs))
 
-makeApp :: ExtExpr -> (Maybe ExtExpr) -> (Maybe ExtExpr)
-makeApp ex1 (Just ex2) = Just (ExtApp ex1 ex2)
-        
-isNothing :: Maybe a -> Bool
-isNothing Nothing = True
+containsNothing :: Maybe InterExpr -> Bool
+containsNothing Nothing = True
+containsNothing (Just (InterApp ex1 ex2)) = or [containsNothing ex1, containsNothing ex2]
+containsNothing (Just (InterLam xs ex)) = containsNothing ex
+containsNothing (Just (InterVar i)) = False
+containsNothing (Just (InterPlaceholder i)) = False
+
+parseInterLam :: String -> Maybe InterExpr
+parseInterLam xs = case (parse parseLamSection xs) of
+                [(n,[])] -> n
+                [(n,out)] -> connect n (parseInterLam out) 
+                [] -> case (parse parseBracketSection xs) of
+                    [(n, [])] -> n
+                    [(n, out)] -> connect n (parseInterLam out)
+                    [] -> case (parse parseVarsSection xs) of
+                        [(Nothing, _)] -> Nothing
+                        [(n, [])] -> n
+                        [(n,out)] -> connect n (parseInterLam out)
+
+data InterExpr = InterApp (Maybe InterExpr) (Maybe InterExpr) | InterLam [Int] (Maybe InterExpr) | InterVar Int | InterPlaceholder Int deriving Show
+
+connect :: (Maybe InterExpr) -> (Maybe InterExpr) -> (Maybe InterExpr)
+connect _ Nothing = Nothing
+connect Nothing _ = Nothing
+connect (Just (InterApp ex1 ex2)) e = Just (InterApp (connect ex2 e) (connect ex1 e))
+connect (Just (InterLam xs ex)) e = Just (InterLam xs (connect ex e))
+connect (Just (InterVar i)) e = Just (InterVar i)
+connect (Just (InterPlaceholder i)) e = e
+
+convert :: (Maybe InterExpr) -> ExtExpr
+convert (Just (InterApp ex1 (Just (InterPlaceholder i)))) = convert ex1
+convert (Just (InterApp ex1 ex2)) = ExtApp (convert ex2) (convert ex1)
+convert (Just (InterLam xs ex)) = ExtLam xs (convert ex)
+convert (Just (InterVar i)) = ExtVar i
+convert (Just (InterPlaceholder i)) = ExtVar i
+
+removePlaceholder :: (Maybe InterExpr) -> (Maybe InterExpr)
+removePlaceholder (Just (InterApp (Just (InterPlaceholder i)) ex1)) = ex1
+removePlaceholder (Just (InterApp ex1 (Just (InterPlaceholder i)))) = ex1
+removePlaceholder (Just (InterApp ex1 ex2)) = Just (InterApp (removePlaceholder ex2) (removePlaceholder ex1))
+--removePlaceholder (Just (InterApp ex1 ex2)) = Just (InterApp (removePlaceholder ex2) (removePlaceholder ex1))
+removePlaceholder (Just (InterLam xs ex)) = Just (InterLam xs (removePlaceholder ex))
+removePlaceholder (Just (InterVar i)) = (Just (InterVar i))
+
+
+parseLamSection :: Parser (Maybe InterExpr)
+parseLamSection = do symbol "\\"
+                     ns <- many (do symbol "x"
+                                    natural)
+                     symbol "->"
+                     return (Just (InterLam ns (Just (InterPlaceholder 1))))
+
+parseBracketSection :: Parser (Maybe InterExpr)
+parseBracketSection = do charBracket
+                         ns <- some (do charNotBracket)
+                         charBracket
+                         return (Just (InterApp (removePlaceholder (parseInterLam ns)) (Just(InterPlaceholder 2))))
+
+charNotBracket :: Parser Char
+charNotBracket = sat notBracket
+
+charBracket :: Parser Char
+charBracket = sat bracket
+
+bracket :: Char -> Bool
+bracket x = or [x == '(', x == ')']
+
+notBracket :: Char -> Bool
+notBracket x = not (bracket x)
+                                                 
+parseVarsSection :: Parser (Maybe InterExpr)
+parseVarsSection = do ns <- many (do symbol "x"
+                                     natural)
+                      return (constructVars (reverse ns))
+               
+constructVars :: [Int] -> Maybe InterExpr
+constructVars [] = Nothing
+constructVars (x:[]) = Just (InterApp (Just (InterVar x)) (Just (InterPlaceholder 1)))
+constructVars (x:xs)
+    | isNothing (constructVars xs) = Nothing
+    | otherwise = Just (InterApp (Just (InterVar x)) (constructVars xs))
+
+isNothing :: (Maybe InterExpr) -> Bool
+isNothing (Nothing) = True
 isNothing _ = False
 
 --challenge 4

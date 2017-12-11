@@ -1,4 +1,6 @@
-<h1>Programming 3 Coursework</h1>
+<h1>
+Programming 3 Coursework
+</h1>
 
 <h3>Harry Brown</h3>
 
